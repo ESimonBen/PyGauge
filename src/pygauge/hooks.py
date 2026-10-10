@@ -9,6 +9,9 @@ from pygauge.events import ModuleEvent
 class HookManager:
     def __init__(self, on_start: Optional[Callable[[ModuleEvent], None]] = None, on_end: Optional[Callable[[ModuleEvent], None]] = None,
                  mode: HookMode = HookMode.LEAF, module_filter: Optional[Callable[[str, nn.Module], bool]] = None):
+        if mode == HookMode.FILTERED and module_filter is None:
+            raise ValueError("FILTERED mode requires a module_filter")
+
         self.on_start = on_start
         self.on_end = on_end
         self.mode = mode
@@ -23,6 +26,9 @@ class HookManager:
         if self.is_attached():
             self.detach()
 
+        if self.mode == HookMode.FILTERED and self.module_filter is None:
+            raise ValueError("FILTERED mode requires a module_filter")
+
         self._invocation_counter = 0
 
         try:
@@ -33,22 +39,25 @@ class HookManager:
                 elif self.mode == HookMode.FILTERED:
                     if self.module_filter and not self.module_filter(name, module):
                         continue
-                elif self.mode == HookMode.ALL:
-                    pass
+                elif self.mode != HookMode.ALL:
+                    raise ValueError(f"Unsupported hook mode: {self.mode}")
 
                 self._module_names[module] = name
                 self._active_stacks[module] = []
 
                 pre_handle = module.register_forward_pre_hook(
-                    lambda m, inputs, mod=module: self._pre_forward_hook(mod, inputs)
+                    self._pre_forward_hook
                 )
 
+                self._handles.append(pre_handle)
+
                 post_handle = module.register_forward_hook(
-                    lambda m, inputs, output, mod=module: self._forward_hook(mod, inputs, output),
+                    self._forward_hook,
                     always_call=True
                 )
 
-                self._handles.extend([pre_handle, post_handle])
+                self._handles.append(post_handle)
+
         except Exception:
             self.detach()
             raise
@@ -70,35 +79,26 @@ class HookManager:
         if module not in self._active_stacks:
             self._active_stacks[module] = []
 
-        self._active_stacks[module].append(event)
+        stack = self._active_stacks[module]
+        stack.append(event)
 
         if self.on_start:
             try:
                 self.on_start(event)
             except Exception:
-                if self._active_stacks[module]:
-                    self._active_stacks[module].pop()
+                stack.pop()
                 raise
 
     def _forward_hook(self, module: nn.Module, inputs: tuple, output) -> None:
         stack = self._active_stacks.get(module)
 
-        if stack:
-            event = stack.pop()
-        else:
-            name = self._module_names.get(module, "")
-            event = ModuleEvent(
-                module=module,
-                name=name,
-                module_type=type(module).__name__,
-                invocation_id=0
-            )
+        if not stack:
+            return
+
+        event = stack.pop()
 
         if self.on_end:
-            try:
-                self.on_end(event)
-            except Exception:
-                raise
+            self.on_end(event)
 
     def detach(self):
         for handle in self._handles:
@@ -107,6 +107,7 @@ class HookManager:
         self._handles.clear()
         self._module_names.clear()
         self._active_stacks.clear()
+        self._invocation_counter = 0
 
     def __enter__(self):
         return self

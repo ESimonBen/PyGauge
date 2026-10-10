@@ -215,3 +215,103 @@ def test_multiple_forward_passes(model, capsys):
     assert output.count("[END]") == 6
 
     manager.detach()
+
+def test_event_order(model):
+    events = []
+
+    manager = HookManager(
+        on_start=lambda e: events.append(("START", e)),
+        on_end=lambda e: events.append(("END", e))
+    )
+
+    manager.attach(model)
+    model(torch.randn(2, 4))
+
+    assert len(events) == 6
+
+    for i in range(0, len(events), 2):
+        start_type, start_event = events[i]
+        end_type, end_event = events[i + 1]
+
+        assert start_type == "START"
+        assert end_type == "END"
+
+        assert start_event.invocation_id == end_event.invocation_id
+        assert start_event.module is end_event.module
+
+def test_attach_failure_cleanup(model, manager, monkeypatch):
+    failing_module = model[1]
+
+    def failing_registration(*args, **kwargs):
+        raise RuntimeError("Registration failed")
+
+    monkeypatch.setattr(
+        failing_module,
+        "register_forward_hook",
+        failing_registration
+    )
+
+    with pytest.raises(RuntimeError, match="Registration failed"):
+        manager.attach(model)
+
+    assert manager.is_attached() is False
+    assert len(manager._handles) == 0
+    assert len(manager._module_names) == 0
+    assert len(manager._active_stacks) == 0
+
+def test_callback_exception():
+    starts = []
+    ends = []
+
+    def failing_start(event):
+        starts.append(event)
+        raise RuntimeError("Start callback failed")
+
+    model = nn.Linear(4, 4)
+
+    manager = HookManager(
+        on_start=failing_start,
+        on_end=ends.append
+    )
+
+    with manager:
+        manager.attach(model)
+
+        with pytest.raises(
+            RuntimeError,
+            match="Start callback failed"
+        ):
+            model(torch.randn(2, 4))
+
+        assert manager._active_stacks[model] == []
+
+    assert len(starts) == 1
+    assert len(ends) == 0
+
+def test_filtered_mode_requires_filter():
+    with pytest.raises(ValueError, match="FILTERED mode requires a module_filter"):
+        HookManager(mode=HookMode.FILTERED)
+
+def test_all_mode_nested_event_order(model):
+    events = []
+
+    manager = HookManager(
+        mode=HookMode.ALL,
+        on_start=lambda e: events.append(("START", e.name)),
+        on_end=lambda e: events.append(("END", e.name))
+    )
+
+    with manager:
+        manager.attach(model)
+        model(torch.randn(2, 4))
+
+    assert events == [
+        ("START", ""),
+        ("START", "0"),
+        ("END", "0"),
+        ("START", "1"),
+        ("END", "1"),
+        ("START", "2"),
+        ("END", "2"),
+        ("END", "")
+    ]
