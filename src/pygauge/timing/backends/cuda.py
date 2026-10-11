@@ -11,7 +11,7 @@ class CUDAEventPair:
 
 class CUDATimingBackend(TimingBackend):
     def __init__(self, device: str = "cuda:0"):
-        if not torch.is_cuda_available():
+        if not torch.cuda.is_available():
             raise RuntimeError("CUDA is not available")
 
         self._device = torch.device(device)
