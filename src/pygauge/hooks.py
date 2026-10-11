@@ -6,6 +6,7 @@ from torch.utils.hooks import RemovableHandle
 from pygauge.enums import HookMode
 from pygauge.events import ModuleEvent
 
+# Is not exactly thread-safe for concurrent model training.
 class HookManager:
     def __init__(self, on_start: Optional[Callable[[ModuleEvent], None]] = None, on_end: Optional[Callable[[ModuleEvent], None]] = None,
                  mode: HookMode = HookMode.LEAF, module_filter: Optional[Callable[[str, nn.Module], bool]] = None):
