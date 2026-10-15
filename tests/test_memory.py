@@ -3,9 +3,10 @@ import pytest
 import torch
 from torch import nn
 
-from pygauge.events import ModuleEvent
 from pygauge.hooks import HookManager
+from pygauge.events import ModuleEvent
 from pygauge.memory.engine import MemoryEngine
+from pygauge.memory.records import MemorySnapshot
 
 
 class FakeMemoryBackend:
@@ -17,7 +18,17 @@ class FakeMemoryBackend:
         return "fake"
 
     def snapshot(self):
-        return next(self._snapshots)
+        value = next(self._snapshots)
+
+        if isinstance(value, Exception):
+            raise value
+
+        if isinstance(value, MemorySnapshot):
+            return value
+
+        return MemorySnapshot(
+            allocated_bytes=value
+        )
 
 
 @pytest.fixture
@@ -90,7 +101,7 @@ def test_duplicate_start_raises(event):
 
 
 def test_stop_without_start_raises(event):
-    engine = make_engine([])
+    engine = make_engine([100])
 
     with pytest.raises(ValueError, match="never started"):
         engine.stop(event)
@@ -186,3 +197,160 @@ def test_memory_engine_hook_integration():
     assert all(r.start_bytes >= 0 for r in records)
     assert all(r.end_bytes >= 0 for r in records)
 
+def test_reserved_memory_delta(event):
+    engine = make_engine([
+        MemorySnapshot(
+            allocated_bytes=1000,
+            reserved_bytes=2000
+        ),
+        MemorySnapshot(
+            allocated_bytes=1500,
+            reserved_bytes=4000
+        )
+    ])
+
+    engine.start(event)
+    record = engine.stop(event)
+
+    assert record.delta_bytes == 500
+    assert record.reserved_delta_bytes == 2000
+
+
+def test_cpu_reserved_memory_is_unavailable(event):
+    engine = make_engine([1000, 1500])
+
+    engine.start(event)
+    record = engine.stop(event)
+
+    assert record.reserved_delta_bytes is None
+
+
+@pytest.mark.parametrize(
+    "allocated,reserved",
+    [
+        (-1, None),
+        (100, -1),
+    ]
+)
+def test_invalid_snapshot_rejected(allocated, reserved):
+    with pytest.raises(ValueError):
+        MemorySnapshot(allocated_bytes=allocated, reserved_bytes=reserved)
+
+
+def test_start_snapshot_failure_preserves_state(event):
+    engine = make_engine([
+        RuntimeError("Snapshot failed")
+    ])
+
+    with pytest.raises(
+        RuntimeError,
+        match="Snapshot failed"
+    ):
+        engine.start(event)
+
+    assert engine.active_count == 0
+    assert engine.record_count == 0
+    assert event.invocation_id not in engine._used_ids
+
+
+def test_stop_snapshot_failure_preserves_active(event):
+    engine = make_engine([
+        1000,
+        RuntimeError("Snapshot failed"),
+        2000
+    ])
+
+    engine.start(event)
+
+    with pytest.raises(
+        RuntimeError,
+        match="Snapshot failed"
+    ):
+        engine.stop(event)
+
+    assert engine.active_count == 1
+    assert engine.record_count == 0
+
+    # Retry the measurement.
+    record = engine.stop(event)
+
+    assert record.delta_bytes == 1000
+    assert engine.active_count == 0
+    assert engine.record_count == 1
+
+
+def test_reset_rejected_while_active(event):
+    engine = make_engine([1000])
+
+    engine.start(event)
+
+    with pytest.raises(RuntimeError, match="Cannot reset"):
+        engine.reset()
+
+    assert engine.active_count == 1
+
+
+def test_duplicate_completed_invocation(event):
+    engine = make_engine([1000, 2000])
+
+    engine.start(event)
+    engine.stop(event)
+
+    with pytest.raises(
+        ValueError,
+        match="already recorded"
+    ):
+        engine.start(event)
+
+
+def test_aborted_invocation_cannot_be_reused(event):
+    engine = make_engine([1000])
+
+    engine.start(event)
+    engine.abort(event.invocation_id)
+
+    with pytest.raises(
+        ValueError,
+        match="already recorded"
+    ):
+        engine.start(event)
+
+
+def test_reset_allows_invocation_id_reuse(event):
+    engine = make_engine([
+        1000, 2000,
+        3000, 4000
+    ])
+
+    engine.start(event)
+    engine.stop(event)
+
+    engine.reset()
+
+    engine.start(event)
+    record = engine.stop(event)
+
+    assert record.delta_bytes == 1000
+    assert engine.record_count == 1
+
+
+def test_wrong_module_preserves_active(event):
+    engine = make_engine([1000, 2000])
+
+    engine.start(event)
+
+    wrong_event = ModuleEvent(
+        module=nn.ReLU(),
+        name=event.name,
+        module_type=event.module_type,
+        invocation_id=event.invocation_id
+    )
+
+    with pytest.raises(ValueError, match="Module error mismatch"):
+        engine.stop(wrong_event)
+
+    assert engine.active_count == 1
+
+    engine.stop(event)
+
+    assert engine.record_count == 1
