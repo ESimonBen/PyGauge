@@ -6,9 +6,10 @@ from torch import nn
 from pygauge.hooks import HookManager
 from pygauge.memory.engine import MemoryEngine
 from pygauge.memory.peaks import CUDAPeakCollector
+from pygauge.memory.backends.cuda import CUDAMemoryBackend
 
 
-pytestmark = pytest.mark.skipif(
+@pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="CUDA is unavailable"
 )
