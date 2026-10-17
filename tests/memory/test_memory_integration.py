@@ -6,8 +6,7 @@ from torch import nn
 from pygauge.enums import HookMode
 from pygauge.hooks import HookManager
 from pygauge.events import ModuleEvent
-from pygauge.memory.engine import MemoryEngine
-from pygauge.memory.records import MemorySnapshot
+from pygauge.memory import MemoryEngine, MemorySnapshot
 
 
 class FakeMemoryBackend:

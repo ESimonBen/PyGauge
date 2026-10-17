@@ -1,2 +1,4 @@
 # __init__.py
-from .records import MemoryRecord
+from .engine import MemoryEngine
+from .records import MemoryRecord, MemorySnapshot
+from .peaks import CUDAPeakRecord, CUDAPeakCollector

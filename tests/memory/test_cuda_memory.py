@@ -3,7 +3,7 @@ import gc
 import torch
 import pytest
 
-from pygauge.memory.backends.cuda import CUDAMemoryBackend
+from pygauge.memory.backends import CUDAMemoryBackend
 
 
 @pytest.mark.skipif(

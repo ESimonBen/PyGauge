@@ -7,9 +7,8 @@ import torch
 from torch import nn
 
 from pygauge.hooks import HookManager
-from pygauge.memory.engine import MemoryEngine
-from pygauge.memory.backends.cpu import CPUMemoryBackend
-from pygauge.memory.backends.cuda import CUDAMemoryBackend
+from pygauge.memory import MemoryEngine
+from pygauge.memory.backends import CPUMemoryBackend, CUDAMemoryBackend
 
 
 def build_model(device: str) -> nn.Module:

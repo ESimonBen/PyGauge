@@ -4,8 +4,7 @@ from dataclasses import dataclass
 
 from pygauge.events import ModuleEvent
 from pygauge.timing.records import TimingRecord
-from pygauge.timing.backends.base import TimingBackend
-from pygauge.timing.backends.cpu import CPUTimingBackend
+from pygauge.timing.backends import TimingBackend, CPUTimingBackend
 
 @dataclass
 class ActiveTiming:

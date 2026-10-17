@@ -7,8 +7,8 @@ from torch import nn
 from pygauge.enums import HookMode
 from pygauge.hooks import HookManager
 from pygauge.events import ModuleEvent
-from pygauge.timing.engine import TimingEngine
-from pygauge.timing.backends.cpu import CPUTimingBackend
+from pygauge.timing import TimingEngine
+from pygauge.timing.backends import CPUTimingBackend
 
 
 @pytest.fixture

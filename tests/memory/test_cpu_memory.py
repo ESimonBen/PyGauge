@@ -2,7 +2,7 @@
 from psutil import Process
 from types import SimpleNamespace
 
-from pygauge.memory.backends.cpu import CPUMemoryBackend
+from pygauge.memory.backends import CPUMemoryBackend
 
 
 class FakeProcess(Process):

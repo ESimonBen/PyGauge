@@ -4,9 +4,8 @@ import pytest
 from torch import nn
 
 from pygauge.hooks import HookManager
-from pygauge.memory.engine import MemoryEngine
-from pygauge.memory.peaks import CUDAPeakCollector
-from pygauge.memory.backends.cuda import CUDAMemoryBackend
+from pygauge.memory.backends import CUDAMemoryBackend
+from pygauge.memory import MemoryEngine, CUDAPeakCollector
 
 
 @pytest.mark.skipif(
